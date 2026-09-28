@@ -4,6 +4,7 @@ in subsection 8.5.3
 
 
 
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
@@ -14,6 +15,7 @@ N_STARTS = 10
 SEED = 12345
 EPS = 1e-12
 
+
 def admissible(p, t):
     return (
         -min(p**2, (1-p)**2) - EPS
@@ -21,97 +23,136 @@ def admissible(p, t):
         <= p * (1-p) + EPS
     )
 
+
 def joint_distribution(p, t):
     s = 1-p
-    A = np.array([[s**2 + t, p*s-t],
-                  [p*s-t, p**2 + t]])
+
+    A = np.array([
+        [s**2 + t, p*s-t],
+        [p*s-t, p**2 + t]
+    ])
+
     P = np.zeros((2, 2, 2))
+
     for b in range(2):
         for x in range(2):
             for y in range(2):
                 P[b, b ^ y, b ^ x] += 0.5 * A[x, y]
+
     return P
+
 
 def cmi(p, t):
     s = 1-p
+
     terms = [
         (s**2 + t, s**2),
         (p*s-t, p*s),
         (p*s-t, p*s),
         (p**2 + t, p**2)
     ]
+
     return sum(
         a * np.log2(a / b)
         for a, b in terms
         if a > EPS and b > EPS
     )
 
+
 def F_nat(p, t):
     s = 1-p
+
     a = max(s**2 + t, 0)
     b = max(p*s-t, 0)
     c = max(p**2 + t, 0)
+
     return (
         np.sqrt(a * s**2)
         + 2 * np.sqrt(b * p*s)
         + np.sqrt(c * p**2)
     )
 
+
 def A_matrix(p, t):
     P = joint_distribution(p, t)
     R = P.sum(axis=1)
+
     A = np.zeros((2, 2))
+
     for b in range(2):
         for c in range(2):
             for r in range(2):
                 v = P[b, c, r] * R[b, r]
+
                 if v > 0:
                     A[b, c] += np.sqrt(v)
+
     return A
+
 
 def F_opt_B_pres(p, t):
     A = A_matrix(p, t)
+
     return sum(
         np.sqrt(np.sum(A[b]**2))
         for b in range(2)
     )
 
+
 def fidelity(P, K):
     R = P.sum(axis=1)
+
     Q = np.zeros((2, 2, 2))
+
     for b in range(2):
         for tb in range(2):
             for c in range(2):
                 for r in range(2):
                     Q[tb, c, r] += R[b, r] * K[b, tb, c]
+
     return np.sqrt(np.maximum(P*Q, 0)).sum()
 
+
 def F_opt_all(p, t, n_starts=N_STARTS, seed=SEED):
+
     P = joint_distribution(p, t)
+
     rng = np.random.default_rng(seed)
+
     best = -np.inf
 
-    constraints = [{
-        "type": "eq",
-        "fun": lambda x: np.sum(x[:4])-1},
+    constraints = [
         {
-        "type": "eq",
-        "fun": lambda x: np.sum(x[4:])-1
-    }]
+            "type": "eq",
+            "fun": lambda x: np.sum(x[:4]) - 1
+        },
+        {
+            "type": "eq",
+            "fun": lambda x: np.sum(x[4:]) - 1
+        }
+    ]
 
     for _ in range(n_starts):
+
         x0 = np.concatenate([
             rng.dirichlet(np.ones(4)),
             rng.dirichlet(np.ones(4))
         ])
 
         result = minimize(
-            lambda x: -fidelity(P, x.reshape(2, 2, 2)),
+            lambda x: -fidelity(
+                P,
+                x.reshape(2, 2, 2)
+            ),
             x0,
             method="SLSQP",
-            bounds=[(0, 1)]*8,
+            bounds=[(0, 1)] * 8,
             constraints=constraints,
-            options={"maxiter": 5000, "ftol": 1e-10, "disp": False}
+            options={
+                "maxiter": 5000,
+                "ftol": 1e-10,
+                "disp": False
+            }
         )
 
         if result.success and np.isfinite(result.fun):
@@ -119,9 +160,9 @@ def F_opt_all(p, t, n_starts=N_STARTS, seed=SEED):
 
     return best if np.isfinite(best) else np.nan
 
+
 def F_FR(p, t):
     return 2 ** (-cmi(p, t) / 2)
-
 
 p0, t0 = 0.10, 0.02
 
@@ -130,22 +171,27 @@ I = cmi(p0, t0)
 print("=" * 60)
 print("TEST: p = 0.1, t = 0.02")
 print("=" * 60)
+
 print(f"I(C:R|B) = {I:.12f}")
 print(f"Q* = {I / 2:.12f}")
 print(f"F_nat = {F_nat(p0, t0):.12f}")
 print(f"F_FR = {F_FR(p0, t0):.12f}")
+
 print(
     f"F_opt^(B-pres) = "
     f"{F_opt_B_pres(p0, t0):.12f}"
 )
+
 print(
     f"F_opt^(all) = "
     f"{F_opt_all(p0, t0, 100, SEED):.12f}"
 )
+
 print("=" * 60)
 
 p_values = np.linspace(P_MIN, P_MAX, N_GRID)
-t_values = np.linspace(-0.20, 0.20, N_GRID)
+
+ t_values = np.linspace(-0.25, 0.25, N_GRID)
 
 shape = (N_GRID, N_GRID)
 
@@ -155,18 +201,30 @@ F_FR_grid = np.full(shape, np.nan)
 F_B_grid = np.full(shape, np.nan)
 F_all_grid = np.full(shape, np.nan)
 
+
 print()
 print("Computing quantities...")
 print()
 
 for i, p in enumerate(p_values):
-    print(f"Row {i + 1}/{N_GRID}", end="\r")
+
+    print(
+        f"Row {i + 1}/{N_GRID}",
+        end="\r"
+    )
+
     for j, t in enumerate(t_values):
+
         if admissible(p, t):
+
             I_grid[i, j] = cmi(p, t)
+
             F_nat_grid[i, j] = F_nat(p, t)
+
             F_FR_grid[i, j] = F_FR(p, t)
+
             F_B_grid[i, j] = F_opt_B_pres(p, t)
+
             F_all_grid[i, j] = F_opt_all(
                 p,
                 t,
@@ -174,21 +232,38 @@ for i, p in enumerate(p_values):
                 SEED + i * N_GRID + j
             )
 
+
 print()
 print("Computations completed.")
 
+
+
 D_nat_FR = F_nat_grid - F_FR_grid
+
 D_all_FR = F_all_grid - F_FR_grid
+
 D_all_B = F_all_grid - F_B_grid
 
-def save_heatmap(Z, title, name, vmin=None, vmax=None):
+
+
+def save_heatmap(
+    Z,
+    title,
+    name,
+    vmin=None,
+    vmax=None
+):
+
     P, T = np.meshgrid(
         p_values,
         t_values,
         indexing="ij"
     )
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(
+        figsize=(8, 6)
+    )
+
     image = ax.pcolormesh(
         P,
         T,
@@ -199,13 +274,20 @@ def save_heatmap(Z, title, name, vmin=None, vmax=None):
     )
 
     ax.set_xlabel(r"$p$")
+
     ax.set_ylabel(r"$t$")
+
     ax.set_title(title)
 
-    fig.colorbar(image, ax=ax)
+    fig.colorbar(
+        image,
+        ax=ax
+    )
+
     fig.tight_layout()
 
     for extension in ["png", "pdf"]:
+
         fig.savefig(
             f"{name}.{extension}",
             dpi=300,
@@ -213,7 +295,6 @@ def save_heatmap(Z, title, name, vmin=None, vmax=None):
         )
 
     plt.close(fig)
-
 
 save_heatmap(
     F_B_grid,
@@ -223,6 +304,7 @@ save_heatmap(
     1
 )
 
+
 save_heatmap(
     F_all_grid,
     r"$F_{\mathrm{opt}}^{\mathrm{all}}(p,t)$",
@@ -231,6 +313,7 @@ save_heatmap(
     1
 )
 
+
 save_heatmap(
     D_nat_FR,
     r"$F_{\mathrm{nat}}-F_{\mathrm{FR}}$",
@@ -238,12 +321,14 @@ save_heatmap(
     0
 )
 
+
 save_heatmap(
     D_all_FR,
     r"$F_{\mathrm{opt}}^{\mathrm{all}}-F_{\mathrm{FR}}$",
     "F_all_minus_FR_heatmap",
     0
 )
+
 
 save_heatmap(
     D_all_B,
@@ -253,6 +338,12 @@ save_heatmap(
     0
 )
 
+print()
+print("=" * 60)
+print("ALL FIGURES SAVED SUCCESSFULLY")
+print("t range: [-0.25, 0.25]")
+print("PNG + PDF")
+print("=" * 60)
 print()
 print("=" * 60)
 print("ALL FIGURES SAVED SUCCESSFULLY")
